@@ -1,0 +1,315 @@
+% paper: A parallel grey wolf optimizer combined with opposition based learning
+% Authors: Mohammad Sohrabi Nasrabadi, Yousef Sharafi, Mohammad Tayari
+% link paper: http://ieeexplore.ieee.org/xpls/abs_all.jsp?arnumber=7482116
+
+%%% for best efficiency:   set: Maximum Iteration=(Maximum NFE)/(PopSize)
+%%% for best efficiency:   set: Maximum Iteration=(Maximum NFE)/(PopSize)
+%%% for example if Maximum NFE=10000 && Popsize= 16
+%%% then Iter should be set 625 at minimum or higher to satisfy 10000 NFEs
+%%%%2-group parallel with partial OBL
+
+clc;
+close all;
+clear all;
+
+%dimension
+dim=30;
+gery.pos=zeros(1,dim);
+gery.cost=[];
+% PopSize
+popsize=16;
+allgery=repmat(gery,[1,popsize]);
+% uper and lower bound
+ub=unifrnd(50,50,([1,dim]));
+lb=unifrnd(-50,-50,([1,dim]));
+% iteration
+iter=640;
+nfe=0;
+
+% maximum NFE(number of function evaluations)
+maxnfe=10000;
+
+z=zeros(1,iter);
+ave=zeros(1,iter);
+ave_nfe=zeros(1,iter);
+best_nfe=zeros(iter,1);
+divide=2*iter/popsize;  % parameter for divide popsize to use partial OBL
+
+ff=popsize/2;
+i1=1;
+i2=popsize/2;
+control=0;
+
+
+Alpha_score1=inf;
+Beta_score1=inf;
+Delta_score1=inf;
+
+Alpha_score2=inf;
+Beta_score2=inf;
+Delta_score2=inf;
+
+for i=1:popsize
+    
+    allgery(i).pos=unifrnd(lb,ub,[1 dim]);
+    allgery(i).cost=costf(allgery(i).pos);
+    nfe=nfe+1;
+end
+
+
+len=0;
+while len<iter && nfe<maxnfe
+    
+    
+    %% partial opposition
+    [e,r]=sort([allgery.cost]);
+    [x,u]=sort(r);
+    if rem(len,divide)==0 && len~=0
+        ff=ff-1;
+        i1=i1+1;
+        i2=i2+1;
+        control=control+1;
+    end
+    if rem(len,popsize/2)==0 && len~=0
+        
+        for i=i1:i2
+            
+            p(i)=ceil(((u(r(i))-control)/popsize)*dim);
+            loc1=randperm(dim);
+            loc=loc1(1:p(i));
+            for j=1:p(i)
+                allgery(r(i)).pos(loc(j))=ub(j)+lb(j)-allgery(r(i)).pos(loc(j));
+            end
+        end
+        if rem(len,popsize)==0
+            
+            for i=popsize-ff+1:popsize
+                
+                for j=1:dim
+                    allgery(r(i)).pos(j)=ub(j)+lb(j)-allgery(r(i)).pos(j);
+                end
+            end
+        end
+    end
+    %% parallel process
+    for i=1:popsize/2
+        allgery(i).cost=costf(allgery(i).pos);
+        nfe=nfe+1;
+        
+        if allgery(i).cost<Alpha_score1
+            Alpha_score1=allgery(i).cost; % Update alpha
+            pos_alpha1=allgery(i).pos;
+        end
+        
+        if allgery(i).cost>Alpha_score1 && allgery(i).cost<Beta_score1
+            Beta_score1=allgery(i).cost; % Update beta
+            pos_beta1=allgery(i).pos;
+        end
+        
+        if allgery(i).cost>Alpha_score1 && allgery(i).cost>Beta_score1 && allgery(i).cost<Delta_score1
+            Delta_score1=allgery(i).cost; % Update delta
+            pos_delta1=allgery(i).pos;
+        end
+    end
+    
+    
+    for i=popsize/2+1:popsize
+        allgery(i).cost=costf(allgery(i).pos);
+        nfe=nfe+1;
+        
+        if allgery(i).cost<Alpha_score2
+            Alpha_score2=allgery(i).cost; % Update alpha
+            pos_alpha2=allgery(i).pos;
+        end
+        
+        if allgery(i).cost>Alpha_score2 && allgery(i).cost<Beta_score2
+            Beta_score2=allgery(i).cost; % Update beta
+            pos_beta2=allgery(i).pos;
+        end
+        
+        if allgery(i).cost>Alpha_score2 && allgery(i).cost>Beta_score2 && allgery(i).cost<Delta_score2
+            Delta_score2=allgery(i).cost; % Update delta
+            pos_delta2=allgery(i).pos;
+        end
+    end
+    
+    
+    [e1,r1]=sort([allgery(1:popsize/2).cost]);
+    [e2,r2]=sort([allgery(popsize/2+1:popsize).cost]);
+    
+    
+    if rem(len,10)==0 && len~=0
+        
+        
+        allgery(r2(popsize/2)+popsize/2).cost=Alpha_score1;
+        allgery(r2(popsize/2)+popsize/2).pos=pos_alpha1;
+        
+        %%%
+        
+        allgery(r2(popsize/2-1)+popsize/2).cost=Beta_score1;
+        allgery(r2(popsize/2-1)+popsize/2).pos=pos_beta1;
+        
+        %%%%
+        
+        allgery(r2(popsize/2-2)+popsize/2).cost=Delta_score1;
+        allgery(r2(popsize/2-2)+popsize/2).pos=pos_delta1;
+        
+        %%%%%
+        allgery(r1(popsize/2)).cost=Alpha_score2;
+        allgery(r1(popsize/2)).pos=pos_alpha2;
+        
+        
+        allgery(r1(popsize/2-1)).cost=Beta_score2;
+        allgery(r1(popsize/2-1)).pos=pos_beta2;
+        
+        allgery(r1(popsize/2-2)).cost=Delta_score2;
+        allgery(r1(popsize/2-2)).pos=pos_delta2;
+        
+        
+        
+        
+        
+    end
+    %% Choose Global best
+    if len<=ceil(1/2*iter)
+        g=min(Alpha_score1,Alpha_score2);
+    end
+    if len>ceil(1/2*iter)
+        gb(1)=min(Alpha_score1,Alpha_score2);
+        pos_ave=(pos_alpha1+pos_alpha2)/2;
+        gb(2)=costf(pos_ave);
+        nfe=nfe+1;
+        pos_a=2*pos_alpha1-pos_alpha2;
+        for j=1:dim
+            pos_a(j)=max([pos_a(j) lb(j)]);
+            pos_a(j)=min([pos_a(j) ub(j)]);
+        end
+        pos_b=2*pos_alpha2-pos_alpha1;
+        for j=1:dim
+            pos_b(j)=max([pos_b(j) lb(j)]);
+            pos_b(j)=min([pos_b(j) ub(j)]);
+        end
+        pos_g1=(pos_a+pos_alpha1)/2;
+        gb(3)=costf(pos_g1);
+        nfe=nfe+1;
+        pos_g2=(pos_b+pos_alpha2)/2;
+        gb(4)=costf(pos_g2);
+        nfe=nfe+1;
+        gb(5)=g;
+        [e,r]=sort(gb);
+        g=gb(r(1));
+        
+        
+    end
+    
+    %% GWO for first group
+    for i=1:popsize/2
+        for j=1:dim
+            a=2-(len*(2/iter));
+            r1=rand();
+            r2=rand();
+            A1=2*a*r1-a;
+            c1=2*r2;
+            dalpha=abs(c1*pos_alpha1(j)-allgery(i).pos(j));
+            X1=pos_alpha1(j)-A1*dalpha;
+            
+            r1=rand();
+            r2=rand();
+            
+            A2=2*a*r1-a;
+            c2=2*r2;
+            dbeta=abs(c2*pos_beta1(j)-allgery(i).pos(j));
+            X2=pos_beta1(j)-A2*dbeta;
+            
+            r1=rand();
+            r2=rand();
+            
+            A3=2*a*r1-a;
+            c3=2*r2;
+            
+            ddelta=abs(c3*pos_delta1(j)-allgery(i).pos(j));
+            X3=pos_delta1(j)-A3*ddelta;
+            
+            
+            
+            
+            allgery(i).pos(j)=(X1+X2+X3)/3;
+            allgery(i).pos(j)=max([allgery(i).pos(j) lb(j)]);
+            allgery(i).pos(j)=min([allgery(i).pos(j) ub(j)]);
+            
+        end
+    end
+    
+    %% GWO for second group
+    for i=popsize/2+1:popsize
+        for j=1:dim
+            a=2-(len*(2/iter));
+            r1=rand();
+            r2=rand();
+            A1=2*a*r1-a;
+            c1=2*r2;
+            dalpha=abs(c1*pos_alpha2(j)-allgery(i).pos(j));
+            X1=pos_alpha2(j)-A1*dalpha;
+            
+            r1=rand();
+            r2=rand();
+            
+            A2=2*a*r1-a;
+            c2=2*r2;
+            dbeta=abs(c2*pos_beta2(j)-allgery(i).pos(j));
+            X2=pos_beta2(j)-A2*dbeta;
+            
+            r1=rand();
+            r2=rand();
+            
+            A3=2*a*r1-a;
+            c3=2*r2;
+            
+            ddelta=abs(c3*pos_delta2(j)-allgery(i).pos(j));
+            X3=pos_delta2(j)-A3*ddelta;
+            
+            
+            
+            
+            allgery(i).pos(j)=(X1+X2+X3)/3;
+            allgery(i).pos(j)=max([allgery(i).pos(j) lb(j)]);
+            allgery(i).pos(j)=min([allgery(i).pos(j) ub(j)]);
+            
+        end
+    end
+    
+    
+    len=len+1;
+    z(len)=g;
+    best_nfe(len)=nfe;
+    
+    disp(['ITER ' num2str(len) ': Best Cost = ' num2str(z(len))])
+    ave(1,1:iter)=z;
+    ave_nfe(1,1:iter)=best_nfe;
+    
+    figure(1);
+    semilogy(best_nfe(1:len),z(1:len),'-b','LineWidth',2);
+    xlabel('NFE(Number of Function Evaluations)');
+    ylabel('Best Cost(Fitness)');
+    
+end
+
+% results
+% NFE(number of function evaluations)
+best_nfe=nfe
+% Best Cost(Fitness)
+best_cost=z(len)
+%or best cost
+% best_cost=min(Alpha_score1,Alpha_score2)
+
+% Best Position
+if Alpha_score1<Alpha_score2
+    pos = pos_alpha1
+else
+    pos= pos_alpha2
+end
+
+
+
+
+
